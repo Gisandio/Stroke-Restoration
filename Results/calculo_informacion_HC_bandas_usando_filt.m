@@ -1,0 +1,353 @@
+% This script analyzes the results from the simulations.
+%
+% Prerequisites:
+% To generate the dataset, please run the following script first:
+%   main_LFP_generator.m
+%
+% After generating the dataset, you can analyze the information using:
+%   calculo_informacion_HC_filtrado
+% Author: Guisande Natalí
+% Date: October 1, 2024
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+bands = struct('name', {'\delta', '\theta', '\alpha', '\beta', '\gamma', 'HFO_{r}'}, ...
+    'values', {[1 4], [4 8], [8 13], [13 30], [30 80], [80 249]});
+
+num_colors = 4;
+% Control points for the custom colormap
+control_points = [0 .25 .5 .75 1];
+
+% Colors corresponding to the control points (RGB values)
+colorss = flip([157 1 66;  % Color 1: #9d0142
+    246 110 69; % Color 2: #f66e45
+    249 231 159; % Color 3: #ffffbb
+    101 192 174; % Color 4: #65c0ae
+    94 79 159]);  % Color 5: #5e4f9f
+
+% Interpolate colors between control points to create the colormap
+sampled_colors = interp1(control_points, colorss, linspace(0, 1, num_colors));
+
+% Normalize color values to the range [0, 1]
+colors = sampled_colors / 255.0;
+figure(1)
+set(gcf, 'Position', [100, 100, 900, 600]) % [posX, posY, width, height]
+subplot(2,3,1)
+hold on
+
+figure(2)
+set(gcf, 'Position', [100, 100, 800, 600]) % [posX, posY, width, height]
+subplot(2,3,1)
+hold on
+
+drawnow
+for j = 1:length(bands)
+    band_values = bands(j).values;
+    % Definir los valores de porcentaje
+    percentages = [2, 5, 10, 20];
+    
+    
+    
+    % Bucle para cargar cada archivo con el porcentaje correspondiente
+    for ii = 1:length(percentages)
+        percent = percentages(ii);
+        filename = sprintf('simulation_data2_numexp1_10X10_percent%d_tf_10000.mat', percent);
+        load(filename);
+        
+        % Parameters for Bandt and Pompe
+        D = 6; % Embedding dimension
+        tau = 1; % Time delay
+        Fs = 500; % Sampling frequency (fixed inside cortical_response_resampled)
+        
+        % Get the size of the restored data
+        [M, N] = size(simulation_data.restoredEF(1).experiment(1).I(:,:,:));
+        
+        % Extract current and potential data for normal and damaged cases
+        Current = simulation_data.normal.experiment.I(:,:,:);
+        Potential = simulation_data.normal.experiment(1).V(:,:,:);
+        Current_damaged = simulation_data.damaged.experiment.I(:,:,:);
+        Potential_damaged = simulation_data.damaged.experiment(1).V(:,:,:);
+        
+        % Initialize matrices for storing information
+        Information_normal = zeros(M, N);
+        Complejidad_normal = zeros(M, N);
+        entropy_normal = zeros(M, N);
+        
+        % Filter design for bandpass
+        [b, a] = butter(4, band_values / (Fs / 2), 'bandpass');
+        
+        % Process normal data
+        for m = 1:M
+            for n = 1:N
+                % Apply filter to the original signal using filtfilt
+                datos_filtrados = filtfilt(b, a, Potential{m, n});
+                PDF = Bandt_y_Pompe_PDF_Original(datos_filtrados, tau, D);
+                PDF = PDF / sum(PDF); % Normalize PDF
+                
+                % Calculate information, complexity, and entropy
+                Information_normal(m, n) = Informacion_de_Fisher(PDF);
+                Complejidad_normal(m, n) = Complejidad_MPR(PDF);
+                entropy_normal(m, n) = Entropia_de_Shannon(PDF);
+            end
+        end
+        
+        % Calculate total information and complexity for normal case
+        Info_ini = nansum(nansum(Information_normal));
+        comple_ini = nansum(nansum(Complejidad_normal));
+        
+        % Initialize matrices for storing information for damaged neurons
+        Information_damaged = zeros(M, N);
+        Complejidad_damaged = zeros(M, N);
+        Entropy_damaged = zeros(M, N);
+        
+        % Process damaged data
+        for m = 1:M
+            for n = 1:N
+                if ~isempty(Potential_damaged{m, n}) && all(Potential_damaged{m, n} ~= 0)
+                    % Apply filter to the damaged signal using filtfilt
+                    datos_filtrados = filtfilt(b, a, Potential_damaged{m, n});
+                    PDF = Bandt_y_Pompe_PDF_Original(datos_filtrados, tau, D);
+                    PDF = PDF / sum(PDF); % Normalize PDF
+                    
+                    % Calculate information, complexity, and entropy
+                    Information_damaged(m, n) = Informacion_de_Fisher(PDF)/Info_ini;
+                    Complejidad_damaged(m, n) = Complejidad_MPR(PDF)/comple_ini;
+                    %Entropy_damaged(m, n) = Entropia_de_Shannon(PDF);
+                else
+                    % Assign zero for missing or zero potential
+                    Information_damaged(m, n) = 0;
+                    Complejidad_damaged(m, n) = 0;
+                    %Entropy_damaged(m, n) = 0;
+                end
+            end
+        end
+        
+        % Calculate total information and complexity for damaged case
+        Info_dame = nansum(nansum(Information_damaged));
+        comple_dame = nansum(nansum(Complejidad_damaged));
+        
+        % Process restored data for each expansion factor
+        Info_total = zeros(1, length(simulation_data.EF));
+        comple_total = zeros(1, length(simulation_data.EF));
+        
+        for i = 1:length(simulation_data.EF)
+            disp(simulation_data.EF(i));
+            
+            Current_Restored = simulation_data.restoredEF(i).experiment(1).I(:,:,:);
+            Potential_Restored = simulation_data.restoredEF(i).experiment(1).V(:,:,:);
+            
+            Information = zeros(M, N);
+            complejidad = zeros(M, N);
+            
+            for m = 1:M
+                for n = 1:N
+                    if ~isempty(Potential_Restored{m, n}) && all(Potential_Restored{m, n} ~= 0)
+                        % Apply filter to the restored signal using filtfilt
+                        datos_filtrados = filtfilt(b, a, Potential_Restored{m, n});
+                        PDF = Bandt_y_Pompe_PDF_Original(datos_filtrados, 1, D);
+                        PDF = PDF / sum(PDF); % Normalize PDF
+                        
+                        % Calculate information and complexity
+                        Information(m, n) = Informacion_de_Fisher(PDF)/Info_ini;
+                        complejidad(m, n) = Complejidad_MPR(PDF)/comple_ini;
+                    else
+                        % Assign zero for missing or zero potential
+                        Information(m, n) = 0;
+                        complejidad(m, n) = 0;
+                    end
+                end
+            end
+            
+            % Store total information and complexity for each expansion factor
+            Info_total(i) = nansum(nansum(Information));
+            comple_total(i) = nansum(nansum(complejidad));
+        end
+        % Find the maximum information and complexity
+        [max_info, max_info_index] = max(Info_total);
+        plasticity_info = simulation_data.EF(max_info_index);
+        
+        [max_complexity, max_complexity_index] = max(comple_total);
+        plasticity_complexity = simulation_data.EF(max_complexity_index);
+        
+        % Subplot for Information
+        figure(1)
+        subplot(2,3,j)
+        hold on
+        plot([0 simulation_data.EF], [Info_dame Info_total], 'color', colors(ii, :), 'LineWidth', 2, 'DisplayName', [num2str(percentages(ii)) '%'])
+        x_values = xlim; % Get current x-axis limits
+        %line(x_values, [Info_ini Info_ini], 'LineStyle', '--', 'Color', 'k'); % Dashed line
+        axis square
+        ylabel('Fisher Information', 'FontName', 'Helvetica', 'FontSize', 12, 'FontWeight', 'bold')
+        xlabel('Plasticity', 'FontName', 'Helvetica', 'FontSize', 12, 'FontWeight', 'bold')
+        xlim([0 20])
+        % Agregar el título con el nombre de la banda y los valores de la banda en Hertz
+        title(sprintf('%s = [%d, %d] Hz', ...
+            bands(j).name, band_values(1), band_values(2)), 'FontSize', 12);
+        %axis square;
+        box on;
+        % Subplot for Complexity
+        figure(2)
+        subplot(2,3,j)
+        hold on
+        plot([0 simulation_data.EF], [comple_dame comple_total], 'color', colors(ii, :), 'LineWidth', 2, 'DisplayName', [num2str(percentages(ii)) '%'])
+        ylabel('Statistical Complexity', 'FontName', 'Helvetica', 'FontSize', 12, 'FontWeight', 'bold')
+        xlabel('Plasticity', 'FontName', 'Helvetica', 'FontSize', 12, 'FontWeight', 'bold')
+        xlim([0 20])
+        %axis square
+        % Agregar el título con el nombre de la banda y los valores de la banda en Hertz
+        title(sprintf('%s = [%d, %d] Hz', ...
+            bands(j).name, band_values(1), band_values(2)), 'FontSize', 12);
+        box on;
+        %axis square;
+    end
+    % title(sprintf('Bandt & Pompe (D = %d, \\tau = %d) - Banda % =[%d, %d] Hz', D, tau, bands(j).name, band_values(1), band_values(2)), 'FontSize', 14, 'FontWeight', 'bold')
+    
+
+end
+%%
+figure(1)
+hLegend = legend('show');  % Mostrar la leyenda con los DisplayName definidos
+% Quitar el borde de la leyenda
+set(hLegend, 'Box', 'off'); 
+%box on
+suptitle(sprintf('Información de Fisher: D = %d, \\tau = %d', D, tau));
+set(gcf, 'Color', [255/255, 252/255, 242/255])
+%tightfig;
+figure(2);
+hLegend = legend('show');  % Mostrar la leyenda con los DisplayName definidos
+% Quitar el borde de la leyenda
+set(hLegend, 'Box', 'off'); 
+%box on
+suptitle(sprintf('Bandt-Pompe: D = %d, \\tau = %d', D, tau));
+%set(gcf, 'Color', [255/255, 252/255, 242/255])
+%tightfig;
+%%
+    %%
+    % Graficar la señal original y la restaurada
+figure(3);
+subplot(2,1,1)
+potencial=simulation_data.normal.experiment(1).V(:,:,:)
+
+% Frecuencia de muestreo (Hz)
+Fs = 500;
+
+% Encontrar picos de la señal
+[pks, locs] = findpeaks(potencial{3, 5}, 'MinPeakHeight', -50);
+
+% Filtrar los picos y ubicaciones en base al valor del pico
+pks_filtrados = pks(pks > -50);  
+locs_filtrados = locs(pks > -50); 
+
+% Calcular los períodos entre picos consecutivos
+periodos = diff(locs_filtrados) / Fs;  % Convertir de índices a segundos
+
+% Asegurarse de que hay suficientes periodos para calcular
+if ~isempty(periodos)
+    periodo_dominante = mean(periodos);  % Período promedio (dominante)
+    
+    % Calcular la frecuencia dominante
+    frecuencia_dominante = 1 / periodo_dominante;
+    
+    % Mostrar resultados
+    fprintf('Período dominante: %.2f segundos\n', periodo_dominante);
+    fprintf('Frecuencia dominante: %.2f Hz\n', frecuencia_dominante);
+else
+    fprintf('No hay suficientes picos detectados para calcular la frecuencia dominante.\n');
+end
+
+tiempo=simulation_data.restoredEF(1).experiment.t ; 
+plot(tiempo, potencial{3, 5}, 'color', colors(1, :), 'DisplayName', sprintf('Normal (%.1f Hz)', frecuencia_dominante),'LineWidth', 1.2);
+
+
+
+
+% Etiquetas y título
+xlabel('Tiempo (s)','FontName', 'Helvetica', 'FontSize', 10, 'FontWeight', 'bold');
+ylabel('Potencial de membrana (mV)','FontName', 'Helvetica', 'FontSize', 10, 'FontWeight', 'bold');
+%title('Comparación entre señal original y luego de la ampliacion de RF');
+legend('show');
+%grid on;
+  xlim([0 1])
+    hLegend = legend('show');  % Mostrar la leyenda con los DisplayName definidos
+% Quitar el borde de la leyenda
+set(hLegend, 'Box', 'off'); 
+% Quitar etiquetas del eje x
+xticklabels([]);
+%box off
+ subplot(2,1,2);
+ 
+potencial=simulation_data.restoredEF(20).experiment(1).V(:,:,:)
+
+% Frecuencia de muestreo (Hz)
+Fs = 500;
+
+% Encontrar picos de la señal
+[pks, locs] = findpeaks(potencial{3, 5}, 'MinPeakHeight', -50);
+
+% Filtrar los picos y ubicaciones en base al valor del pico
+pks_filtrados = pks(pks > -50);  
+locs_filtrados = locs(pks > -50); 
+
+% Calcular los períodos entre picos consecutivos
+periodos = diff(locs_filtrados) / Fs;  % Convertir de índices a segundos
+
+% Asegurarse de que hay suficientes periodos para calcular
+if ~isempty(periodos)
+    periodo_dominante = mean(periodos);  % Período promedio (dominante)
+    
+    % Calcular la frecuencia dominante
+    frecuencia_dominante = 1 / periodo_dominante;
+    
+    % Mostrar resultados
+    fprintf('Período dominante: %.2f segundos\n', periodo_dominante);
+    fprintf('Frecuencia dominante: %.2f Hz\n', frecuencia_dominante);
+else
+    fprintf('No hay suficientes picos detectados para calcular la frecuencia dominante.\n');
+end
+
+
+tiempo=simulation_data.restoredEF(1).experiment.t ; 
+plot(tiempo, potencial{3, 5}, 'color', colors(4, :), 'DisplayName', sprintf('RF expandido (%.1f Hz)', frecuencia_dominante),'LineWidth', 1.2);
+legend show;
+
+hold off;
+
+% Etiquetas y título
+xlabel('Tiempo (s)','FontName', 'Helvetica', 'FontSize', 10, 'FontWeight', 'bold');
+ylabel('Potencial de membrana (mV)','FontName', 'Helvetica', 'FontSize', 10, 'FontWeight', 'bold');
+%title('Comparación entre señal original y señal filtrada');
+
+%grid on;
+  xlim([0 1])
+  hLegend = legend('show');  % Mostrar la leyenda con los DisplayName definidos
+% Quitar el borde de la leyenda
+set(hLegend, 'Box', 'off'); 
+%box off
+set(gcf, 'Color', [255/255, 252/255, 242/255])
+%%
+
+% Frecuencia de muestreo (Hz)
+Fs = 500;
+
+% Encontrar picos de la señal
+[pks, locs] = findpeaks(Potential_Restored{3, 5}, 'MinPeakHeight', -50);
+
+% Filtrar los picos y ubicaciones en base al valor del pico
+pks_filtrados = pks(pks > -50);  
+locs_filtrados = locs(pks > -50); 
+
+% Calcular los períodos entre picos consecutivos
+periodos = diff(locs_filtrados) / Fs;  % Convertir de índices a segundos
+
+% Asegurarse de que hay suficientes periodos para calcular
+if ~isempty(periodos)
+    periodo_dominante = mean(periodos);  % Período promedio (dominante)
+    
+    % Calcular la frecuencia dominante
+    frecuencia_dominante = 1 / periodo_dominante;
+    
+    % Mostrar resultados
+    fprintf('Período dominante: %.2f segundos\n', periodo_dominante);
+    fprintf('Frecuencia dominante: %.2f Hz\n', frecuencia_dominante);
+else
+    fprintf('No hay suficientes picos detectados para calcular la frecuencia dominante.\n');
+end

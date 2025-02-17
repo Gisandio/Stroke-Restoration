@@ -1,0 +1,7 @@
+HELP:
+To generate the dataset, first run main_LFP_generator.m
+After generating the data, you can analyze the information by running 
+calculo_informacion_HC_filtrado.m
+
+Author: Guisande Natalí
+Date: October 1, 2024
