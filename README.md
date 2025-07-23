@@ -38,5 +38,5 @@ If you have any questions or ideas, feel free to open an issue or start a discus
 This project has been submitted for consideration to *Physical Review E* as part of the manuscript:
 
 **From Lesion to Recovery: A Computational Framework for Visual Cortex Plasticity and Information Dynamics Post-Stroke**  
-by Natali Guisande, Roman Baravalle, and Fernando Montani  
+by Natalí Guisande, Roman Baravalle, and Fernando Montani  
 
