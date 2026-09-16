@@ -35,8 +35,11 @@ If you have any questions or ideas, feel free to open an issue or start a discus
 
 ## Related Work
 
-This project has been submitted for consideration to *Physical Review E* as part of the manuscript:
+This project corresponds to the manuscript published in *The European Physical Journal B*:
 
-**From Lesion to Recovery: A Computational Framework for Visual Cortex Plasticity and Information Dynamics Post-Stroke**  
+**Information flow and plasticity: modeling visual cortex recovery after stroke**  
 by Natalí Guisande, Roman Baravalle, and Fernando Montani  
+
+* **Paper (View-Only / SharedIt):** [Read Full-Text Article](https://rdcu.be/riLjRByywt3a)
+* **DOI:** [https://doi.org/10.1140/epjb/s10051-026-01246-8](https://doi.org/10.1140/epjb/s10051-026-01246-8)
 
